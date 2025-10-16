@@ -1,0 +1,717 @@
+-- 📦 Load Wind UI
+local success, WindUI = pcall(function()
+    return loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+end)
+
+if not success or not WindUI then
+    warn("❌ Failed to load Wind UI")
+    return
+end
+
+-- Add Red-Black Theme
+WindUI:AddTheme({
+    Name = "RedBlack",
+    Accent = Color3.fromRGB(255, 0, 0),
+    Dialog = Color3.fromRGB(20, 20, 20),
+    Outline = Color3.fromRGB(255, 0, 0),
+    Text = Color3.fromRGB(255, 255, 255),
+    Placeholder = Color3.fromRGB(150, 150, 150),
+    Background = Color3.fromRGB(0, 0, 0),
+    Button = Color3.fromRGB(80, 0, 0),
+    Icon = Color3.fromRGB(255, 0, 0)
+})
+WindUI:SetTheme("RedBlack")
+
+-- Create Window
+local Window = WindUI:CreateWindow({
+    Title = "H4X",
+    Author = ".gg/h4xscripts",
+    Folder = "H4XSCRIPTS",
+    Transparent = true,
+    Theme = "RedBlack",
+})
+
+Window:EditOpenButton({
+    Title = "h4xscripts",
+    Icon = "monitor",
+    CornerRadius = UDim.new(0,16),
+    StrokeThickness = 2,
+    Color = ColorSequence.new( -- gradient
+        Color3.fromHex("FF0F7B"), 
+        Color3.fromHex("F89B29")
+    ),
+    OnlyMobile = false,
+    Enabled = true,
+    Draggable = true,
+})
+
+Window:DisableTopbarButtons({
+    "Close",
+})
+
+-- Show popup after a short delay
+task.delay(0.1, function()
+    WindUI:Popup({
+        Title = "Successfully Loaded",
+        Icon = "info",
+        Content = "made by @mallo! join our discord!",
+        Buttons = {
+            {
+                Title = "OK",
+                Callback = function() end,
+                Variant = "Primary",
+            }
+        }
+    })
+end)
+
+print("✅ Wind UI loaded successfully")
+
+-- Auto Farm Tab
+local AutoFarmTab = Window:Tab({
+    Title = "Auto Farm",
+    Icon = "circle",
+    Locked = false,
+})
+
+-- Player Settings Tab
+local PlayerSettingsTab = Window:Tab({
+    Title = "Player Settings",
+    Icon = "user",
+    Locked = false,
+})
+
+-- WalkSpeed Slider (Speed Hack)
+PlayerSettingsTab:Slider({
+    Title = "WalkSpeed (Speed Hack)",
+    Step = 1,
+    Value = {
+        Min = 16,
+        Max = 200,
+        Default = 16,
+    },
+    Callback = function(value)
+        local player = game.Players.LocalPlayer
+        if player.Character and player.Character:FindFirstChild("Humanoid") then
+            player.Character.Humanoid.WalkSpeed = value
+            print("WalkSpeed set to", value)
+        end
+    end
+})
+
+-- No Clip Through Trees
+getgenv().NoClipTrees = false
+local noclipConnection
+
+PlayerSettingsTab:Toggle({
+    Title = "No Clip Through Trees",
+    Desc = "Walk through trees and obstacles easily",
+    Default = false,
+    Callback = function(state)
+        getgenv().NoClipTrees = state
+        local player = game.Players.LocalPlayer
+
+        if state then
+            noclipConnection = game:GetService("RunService").Stepped:Connect(function()
+                if player.Character then
+                    for _, part in ipairs(player.Character:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = false
+                        end
+                    end
+                end
+            end)
+            print(" NoClip enabled — you can walk through trees")
+        else
+            if noclipConnection then
+                noclipConnection:Disconnect()
+                noclipConnection = nil
+            end
+
+            -- Restore collision
+            if player.Character then
+                for _, part in ipairs(player.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
+            end
+
+            print(" NoClip disabled — collisions restored")
+        end
+    end
+})
+
+-- === AUTO COLLECT CHESTS BY TELEPORT + PROMPT ===
+getgenv().AutoTPChest = false
+local TELEPORT_DELAY = 0.3
+
+AutoFarmTab:Toggle({
+    Title = "Auto TP & Collect Chests",
+    Desc = "Tp to chest and auto collect it",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoTPChest = state
+        if state then
+            task.spawn(function()
+                local Players = game:GetService("Players")
+                local LocalPlayer = Players.LocalPlayer
+
+                while getgenv().AutoTPChest do
+                    local Character = LocalPlayer.Character
+                    local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+                    local ChestFolder = workspace:FindFirstChild("ChestFolder")
+
+                    if Root and ChestFolder then
+                        for _, chest in ipairs(ChestFolder:GetChildren()) do
+                            if not getgenv().AutoTPChest then break end
+
+                            local hitpart = chest:FindFirstChild("Hitpart")
+                            local prompt = hitpart and hitpart:FindFirstChildOfClass("ProximityPrompt")
+
+                            if hitpart and prompt then
+                                -- Teleport slightly above chest
+                                Root.CFrame = hitpart.CFrame + Vector3.new(0, 3, 0)
+                                task.wait(0.2)
+
+                                -- Trigger the proximity prompt
+                                fireproximityprompt(prompt)
+                                task.wait(TELEPORT_DELAY)
+                            end
+                        end
+                    end
+
+                    task.wait(1)
+                end
+            end)
+        end
+    end
+})
+
+-- === MASSIVE WEAPON SIZE (toggle + slider) ===
+getgenv().MassiveWeaponsEnabled = false
+getgenv().MassiveWeaponScale = 2 -- default multiplier
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- store original sizes so we can restore later
+local originalSizes = {} -- key: Instance, value: Vector3 or SpecialMesh.Scale
+
+local function rememberOriginal(part)
+    if not part or not part:IsA("BasePart") then return end
+    if originalSizes[part] == nil then
+        originalSizes[part] = part.Size
+    end
+    -- if there's a SpecialMesh, remember its scale separately
+    local sm = part:FindFirstChildOfClass("SpecialMesh")
+    if sm and originalSizes[sm] == nil then
+        originalSizes[sm] = sm.Scale
+    end
+end
+
+local function restoreOriginal(part)
+    if not part then return end
+    if part:IsA("BasePart") and originalSizes[part] then
+        pcall(function() part.Size = originalSizes[part] end)
+        originalSizes[part] = nil
+    end
+    local sm = part:FindFirstChildOfClass("SpecialMesh")
+    if sm and originalSizes[sm] then
+        pcall(function() sm.Scale = originalSizes[sm] end)
+        originalSizes[sm] = nil
+    end
+end
+
+local function applyScaleToPart(part, scale)
+    if not part or not part:IsA("BasePart") then return end
+    rememberOriginal(part)
+    pcall(function()
+        -- if there's a special mesh, scale that instead of raw part size (keeps mesh proportions)
+        local sm = part:FindFirstChildOfClass("SpecialMesh")
+        if sm then
+            local orig = originalSizes[sm] or sm.Scale
+            sm.Scale = orig * scale
+        else
+            local orig = originalSizes[part] or part.Size
+            part.Size = orig * scale
+        end
+    end)
+end
+
+local function applyScaleToTool(tool, scale)
+    if not tool or not tool:IsA("Tool") then return end
+    -- common handle names: "Handle"
+    for _, part in ipairs(tool:GetDescendants()) do
+        if part:IsA("BasePart") and (part.Name:lower():find("handle") or part.Name:lower():find("blade") or part.Name:lower():find("part")) then
+            applyScaleToPart(part, scale)
+        end
+    end
+end
+
+local function restoreTool(tool)
+    if not tool then return end
+    for _, part in ipairs(tool:GetDescendants()) do
+        if part:IsA("BasePart") and (part.Name:lower():find("handle") or part.Name:lower():find("blade") or part.Name:lower():find("part")) then
+            restoreOriginal(part)
+        end
+        local sm = part:FindFirstChildOfClass("SpecialMesh")
+        if sm then restoreOriginal(sm) end
+    end
+end
+
+-- handle newly added tools to backpack or character
+local function onToolAdded(tool)
+    if not tool then return end
+    if getgenv().MassiveWeaponsEnabled then
+        applyScaleToTool(tool, getgenv().MassiveWeaponScale or 1)
+    end
+    -- re-apply when tool is equipped (some games replace or weld parts)
+    if tool:IsA("Tool") then
+        tool.Equipped:Connect(function()
+            if getgenv().MassiveWeaponsEnabled then
+                task.wait(0.05)
+                applyScaleToTool(tool, getgenv().MassiveWeaponScale or 1)
+            end
+        end)
+    end
+end
+
+-- scan backpack and character
+local function scanAndApplyAll(scale)
+    local plr = LocalPlayer
+    if not plr then return end
+    -- Backpack
+    local backpack = plr:FindFirstChildOfClass("Backpack")
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") then onToolAdded(item) end
+        end
+    end
+    -- Character tools / descendants
+    local char = plr.Character
+    if char then
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA("Tool") then onToolAdded(item) end
+        end
+    end
+end
+
+-- restore all known originals
+local function restoreAll()
+    for inst, _ in pairs(originalSizes) do
+        pcall(function()
+            if inst:IsA("BasePart") then inst.Size = originalSizes[inst] end
+        end)
+        -- if it's a SpecialMesh, handled below
+    end
+    -- restore special meshes separately
+    for inst, _ in pairs(originalSizes) do
+        pcall(function()
+            if typeof(inst) == "Instance" and inst:IsA("SpecialMesh") and originalSizes[inst] then
+                inst.Scale = originalSizes[inst]
+            end
+        end)
+    end
+    -- clear storage
+    originalSizes = {}
+end
+
+-- keep connections to clean up later
+local backpackConn, charAddedConn, charDescConn
+
+-- toggle + slider UI (add to PlayerSettingsTab)
+PlayerSettingsTab:Toggle({
+    Title = "Massive Weapons",
+    Desc = "Scale your weapons",
+    Default = false,
+    Callback = function(state)
+        getgenv().MassiveWeaponsEnabled = state
+        if state then
+            -- apply to existing tools
+            scanAndApplyAll(getgenv().MassiveWeaponScale or 1)
+            -- connect backpack additions
+            local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+            if backpack and not backpackConn then
+                backpackConn = backpack.ChildAdded:Connect(function(child)
+                    if child:IsA("Tool") then onToolAdded(child) end
+                end)
+            end
+            -- connect character add and descendant changes
+            if not charAddedConn then
+                charAddedConn = LocalPlayer.CharacterAdded:Connect(function(char)
+                    task.wait(0.1)
+                    -- apply to any tools in char
+                    for _, c in ipairs(char:GetChildren()) do
+                        if c:IsA("Tool") then onToolAdded(c) end
+                    end
+                    -- watch for new descendants
+                    charDescConn = char.DescendantAdded:Connect(function(desc)
+                        if desc and desc:IsA("Tool") then onToolAdded(desc) end
+                    end)
+                end)
+            end
+            -- if character already exists, connect descendant added on it
+            if LocalPlayer.Character and not charDescConn then
+                charDescConn = LocalPlayer.Character.DescendantAdded:Connect(function(desc)
+                    if desc and desc:IsA("Tool") then onToolAdded(desc) end
+                end)
+            end
+            print("Massive Weapons: ENABLED (scale x" .. tostring(getgenv().MassiveWeaponScale) .. ")")
+        else
+            -- disconnect listeners
+            if backpackConn then backpackConn:Disconnect(); backpackConn = nil end
+            if charAddedConn then charAddedConn:Disconnect(); charAddedConn = nil end
+            if charDescConn then charDescConn:Disconnect(); charDescConn = nil end
+            -- restore sizes
+            restoreAll()
+            print("Massive Weapons: DISABLED and sizes restored")
+        end
+    end
+})
+
+PlayerSettingsTab:Slider({
+    Title = "Size Multiplier",
+    Step = 0.1,
+    Value = {
+        Min = 0.5,
+        Max = 10,
+        Default = getgenv().MassiveWeaponScale or 2,
+    },
+    Callback = function(value)
+        getgenv().MassiveWeaponScale = tonumber(value) or 1
+        -- if enabled, re-apply new scale to tools
+        if getgenv().MassiveWeaponsEnabled then
+            scanAndApplyAll(getgenv().MassiveWeaponScale)
+        end
+        print("Massive weapon scale set to x" .. tostring(getgenv().MassiveWeaponScale))
+    end
+})
+
+--  Auto Chop --
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local TreeRemote = ReplicatedStorage:WaitForChild("Signal"):WaitForChild("Tree")
+
+local chopping = false
+local treesToCut = 50
+
+local character = player.Character or player.CharacterAdded:Wait()
+local root = character:WaitForChild("HumanoidRootPart")
+
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    root = newChar:WaitForChild("HumanoidRootPart")
+end)
+
+local function getClosestTrees(limit)
+    local trees = {}
+    if not root then return trees end
+
+    for _, tree in pairs(workspace:GetDescendants()) do
+        if tree:IsA("Model") and string.find(tree.Name, "World") then
+            local mainPart = tree.PrimaryPart or tree:FindFirstChildWhichIsA("BasePart")
+            if mainPart then
+                local distance = (mainPart.Position - root.Position).Magnitude
+                table.insert(trees, {model = tree, dist = distance})
+            end
+        end
+    end
+
+    table.sort(trees, function(a, b) return a.dist < b.dist end)
+
+    local selected = {}
+    for i = 1, math.min(limit, #trees) do
+        table.insert(selected, trees[i].model)
+    end
+    return selected
+end
+
+local function startChopping()
+    if chopping then return end
+    chopping = true
+
+    task.spawn(function()
+        while chopping do
+            if not root or not character or not character.Parent then
+                task.wait(0.2)
+                continue
+            end
+
+            -- dynamically update nearby trees very often
+            local nearbyTrees = getClosestTrees(treesToCut)
+            for _, tree in pairs(nearbyTrees) do
+                if not chopping then break end
+                local args = {
+                    [1] = "damage",
+                    [2] = tree.Name
+                }
+                TreeRemote:FireServer(unpack(args))
+                task.wait(0.005) -- faster response per tree
+            end
+
+            task.wait(0.05) -- updates quickly with your movement
+        end
+    end)
+end
+
+local function stopChopping()
+    chopping = false
+end
+
+-- autofarm --
+AutoFarmTab:Toggle({
+    Title = "Auto Chop Trees",
+    Default = false,
+    Callback = function(v)
+        if v then
+            startChopping()
+        else
+            stopChopping()
+        end
+    end,
+})
+
+AutoFarmTab:Slider({
+    Title = "Trees to Chop",
+    Step = 1,
+    Value = {
+        Min = 10,
+        Max = 200,
+        Default = 50,
+    },
+    Callback = function(val)
+        treesToCut = val
+    end,
+})
+
+-- === AUTO BUY TAB ===
+local AutoBuyTab = Window:Tab({
+    Title = "Auto Buy",
+    Icon = "shopping-cart",
+})
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SignalItem = ReplicatedStorage:WaitForChild("Signal"):WaitForChild("Item")
+local ItemsModule = require(ReplicatedStorage.Data.GameProperties.Items)
+
+-- === Global Variables ===
+getgenv().AutoBuyEnabled = false
+local SelectedItems = {}
+local allItems = {}
+
+-- Populate items dynamically
+local function updateItemList()
+    allItems = {}
+    for itemName in pairs(ItemsModule) do
+        table.insert(allItems, itemName)
+    end
+end
+
+updateItemList()
+
+-- === Multi-select: Item ===
+local ItemDropdown = AutoBuyTab:Dropdown({
+    Title = "🧾 Select Items",
+    Multi = true,
+    List = allItems,
+    Callback = function(selected)
+        SelectedItems = selected
+        print("[AutoBuy] Selected Items:", table.concat(selected, ", "))
+    end,
+})
+
+-- === Toggle: Auto Buy ===
+AutoBuyTab:Toggle({
+    Title = "💸 Auto Buy Selected Items",
+    Desc = "Automatically buys all selected items",
+    Default = false,
+    Callback = function(state)
+        getgenv().AutoBuyEnabled = state
+        if state then
+            print("[AutoBuy] Started.")
+            task.spawn(function()
+                while getgenv().AutoBuyEnabled do
+                    for _, itemName in ipairs(SelectedItems) do
+                        pcall(function()
+                            SignalItem:FireServer("BuyItem", itemName)
+
+                        end)
+                        task.wait(1.5) -- adjust delay if needed
+                    end
+                    task.wait(1)
+                end
+            end)
+        else
+            print("[AutoBuy] Stopped.")
+        end
+    end,
+})
+
+-- === Refresh Button ===
+AutoBuyTab:Button({
+    Title = "🔄 Refresh Item List",
+    Callback = function()
+        updateItemList()
+        ItemDropdown:Refresh(allItems)
+        print("[AutoBuy] Item list refreshed.")
+    end,
+})
+
+-- === MISC TAB ===
+local MiscTab = Window:Tab({
+    Title = "Misc",
+    Icon = "settings",
+})
+
+-- Rejoin Server
+MiscTab:Button({
+    Title = "🔁 Rejoin Server",
+    Desc = "Quickly rejoin your current game",
+    Callback = function()
+        local TeleportService = game:GetService("TeleportService")
+        local Players = game:GetService("Players")
+        local LocalPlayer = Players.LocalPlayer
+
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end,
+})
+
+-- Server Hop --
+MiscTab:Button({
+    Title = "🌐 Server Hop",
+    Desc = "Join a different public server",
+    Callback = function()
+        local TeleportService = game:GetService("TeleportService")
+        local HttpService = game:GetService("HttpService")
+
+        local servers = {}
+        local req = pcall(function()
+            servers = HttpService:JSONDecode(
+                game:HttpGetAsync("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
+            )
+        end)
+
+        if req and servers and servers.data then
+            for _, server in ipairs(servers.data) do
+                if server.playing < server.maxPlayers then
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id)
+                    return
+                end
+            end
+        end
+
+        WindUI:Popup({
+            Title = "⚠️ No Servers Found",
+            Icon = "alert-triangle",
+            Content = "Couldn't find a new server. Try again later.",
+            Buttons = {
+                { Title = "OK", Variant = "Primary" }
+            }
+        })
+    end,
+})
+
+-- Copy Discord Invite
+MiscTab:Button({
+    Title = "📋 Copy Discord Invite",
+    Desc = "Copies your Discord server invite to clipboard",
+    Callback = function()
+        setclipboard("https://discord.gg/h4xscripts")
+        WindUI:Popup({
+            Title = "✅ Copied!",
+            Icon = "check-circle",
+            Content = "Discord invite copied to clipboard.",
+            Buttons = {
+                { Title = "OK", Variant = "Primary" }
+            }
+        })
+    end,
+})
+
+-- === GAMEPASS TAB ===
+local GamepassTab = Window:Tab({
+    Title = "Gamepass",
+    Icon = "shopping-bag",
+})
+
+-- === CONFIG ===
+local gamepassList = {}
+local selectedGamepass = nil
+
+-- 🧠 Function: Refresh list of gamepasses
+local function refreshGamepassList()
+	gamepassList = {}
+	local gpFolder = game:GetService("Players").LocalPlayer:FindFirstChild("GamepassFolder")
+	if gpFolder then
+		for _, v in pairs(gpFolder:GetChildren()) do
+			if v:IsA("BoolValue") then
+				table.insert(gamepassList, v.Name)
+			end
+		end
+		print("[H4X] 🔁 Gamepasses refreshed: " .. table.concat(gamepassList, ", "))
+	else
+		warn("[H4X] ⚠️ GamepassFolder not found!")
+	end
+	return gamepassList
+end
+
+-- 🎚️ Dropdown (created first so we can update it later)
+local gamepassDropdown = GamepassTab:Dropdown({
+	Title = "🎟️ Select Gamepass",
+	List = gamepassList,
+	Callback = function(selected)
+		selectedGamepass = selected
+		print("[H4X] Selected Gamepass:", selected)
+	end,
+})
+
+-- 🔘 Refresh Button (updates dropdown dynamically)
+GamepassTab:Button({
+	Title = "🔄 Refresh Gamepasses",
+	Callback = function()
+		local newList = refreshGamepassList()
+		if #newList > 0 then
+			gamepassDropdown:Refresh(newList)
+		else
+			gamepassDropdown:Refresh({"< No Gamepasses Found >"})
+		end
+	end,
+})
+
+-- 🎯 Grant Button
+GamepassTab:Button({
+	Title = "✅ Get Gamepass Buffs",
+	Callback = function()
+		if not selectedGamepass then
+			warn("[H4X] ⚠️ No gamepass selected.")
+			return
+		end
+
+		local gpFolder = game:GetService("Players").LocalPlayer:FindFirstChild("GamepassFolder")
+		if gpFolder then
+			local gp = gpFolder:FindFirstChild(selectedGamepass)
+			if gp and gp:IsA("BoolValue") then
+				gp.Value = true
+				print("[H4X] ✅ Granted:", selectedGamepass)
+			else
+				warn("[H4X] ❌ Gamepass not found or invalid type.")
+			end
+		else
+			warn("[H4X] ⚠️ GamepassFolder not found!")
+		end
+	end,
+})
+
+-- Auto-refresh once when UI loads
+task.defer(function()
+	local initialList = refreshGamepassList()
+	if #initialList > 0 then
+		gamepassDropdown:Refresh(initialList)
+	else
+		gamepassDropdown:Refresh({"< No Gamepasses Found >"})
+	end
+end)
